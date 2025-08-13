@@ -4,122 +4,500 @@ import numpy as np
 import os
 from io import BytesIO
 import warnings
+from datetime import datetime
+import openpyxl
+import hashlib
 
 # Suppress SettingWithCopyWarning
 warnings.filterwarnings('ignore', category=pd.errors.SettingWithCopyWarning)
 
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# Valid credentials (for demo purposes; in production, use a secure database)
+VALID_USERNAME = "Access_User"
+VALID_PASSWORD_HASH = hash_password("Jainam@135")
+
+def to_excel(df):
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Sheet1', index=False)
+    return buffer.getvalue()
+
 def main():
     # Set page configuration
-    st.set_page_config(page_title="Jainam Data Processor", layout="centered")
+    st.set_page_config(page_title="Jainam Data Processor", layout="centered", initial_sidebar_state="collapsed")
 
-    # Custom CSS for styling
+    # Initialize session state
+    if 'theme' not in st.session_state:
+        st.session_state.theme = 'light'
+    if 'form_inputs' not in st.session_state:
+        st.session_state.form_inputs = {'file1': None, 'file2': None, 'file3': None, 'sheet_name': '', 'date': None}
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'output' not in st.session_state:
+        st.session_state.output = None
+
+    # Theme-based CSS
+    def get_css(theme):
+        if theme == 'dark':
+            background = "linear-gradient(135deg, #1F2937 0%, #374151 100%)"
+            container_bg = "#2D3748"
+            text_color = "#FFFFFF"
+            input_bg = "#4B5563"
+            input_border = "#6B7280"
+            button_bg = "linear-gradient(90deg, #06B6D4, #3B82F6)"
+            button_hover = "linear-gradient(90deg, #0E7490, #1E40AF)"
+            header_gradient = "linear-gradient(to right, #34D399, #60A5FA)"
+            error_bg = "#4B5563"
+            error_border = "#EF4444"
+            error_text = "#FECACA"
+            success_bg = "#4B5563"
+            success_border = "#10B981"
+            success_text = "#D1FAE5"
+            tooltip_bg = "#1E40AF"
+            tooltip_text = "#FFFFFF"
+            progress_bg = "#3B82F6"
+            toggle_bg = "#4B5563"
+            toggle_border = "#6B7280"
+            login_bg = "linear-gradient(145deg, #374151, #1F2937)"
+            login_border = "#4B5563"
+            card_shadow = "0 12px 24px rgba(0, 0, 0, 0.3)"
+        else:
+            background = "linear-gradient(135deg, #E5E7EB 0%, #A5B4FC 100%)"
+            container_bg = "#FFFFFF"
+            text_color = "#1F2937"
+            input_bg = "#F9FAFB"
+            input_border = "#D1D5DB"
+            button_bg = "linear-gradient(90deg, #10B981, #3B82F6)"
+            button_hover = "linear-gradient(90deg, #047857, #1E40AF)"
+            header_gradient = "linear-gradient(to right, #10B981, #3B82F6)"
+            error_bg = "#FEE2E2"
+            error_border = "#EF4444"
+            error_text = "#B91C1C"
+            success_bg = "#D1FAE5"
+            success_border = "#10B981"
+            success_text = "#065F46"
+            tooltip_bg = "#1E40AF"
+            tooltip_text = "#FFFFFF"
+            progress_bg = "#10B981"
+            toggle_bg = "#E5E7EB"
+            toggle_border = "#D1D5DB"
+            login_bg = "linear-gradient(145deg, #FFFFFF, #F3F4F6)"
+            login_border = "#D1D5DB"
+            card_shadow = "0 8px 16px rgba(0, 0, 0, 0.1)"
+
+        return f"""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        .stApp {{
+            background: {background};
+            min-height: 100vh;
+            padding: 2rem;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.3s ease;
+        }}
+        .container {{
+            background: {container_bg};
+            border-radius: 0.75rem;
+            box-shadow: {card_shadow};
+            padding: 2rem;
+            max-width: 550px;
+            margin: auto;
+            transition: transform 0.3s ease;
+        }}
+        .container:hover {{
+            transform: translateY(-3px);
+        }}
+        .header h1 {{
+            font-size: 2.5rem;
+            font-weight: 700;
+            text-align: center;
+            background: {header_gradient};
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+        }}
+        .header p {{
+            text-align: center;
+            color: {text_color};
+            font-size: 1rem;
+            opacity: 0.8;
+            margin-bottom: 1.5rem;
+        }}
+        .stFileUploader, .stTextInput, .stDateInput {{
+            background: {input_bg};
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            border: 1px solid {input_border};
+            transition: all 0.3s ease;
+            border-radius: 12px;
+        }}
+        .stFileUploader:hover, .stTextInput:hover, .stDateInput:hover {{
+            border-color: #3B82F6;
+            background: #E5E7EB;
+            transform: scale(1.02);
+        }}
+        .stFileUploader label, .stTextInput label, .stDateInput label {{
+            font-weight: 600;
+            color: {text_color};
+            margin-bottom: 0.5rem;
+        }}
+        .stButton>button {{
+            background: {button_bg};
+            border: none;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            font-size: 1rem;
+            font-weight: 600;
+            color: {text_color};
+            width: 100%;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            border-radius: 12px;
+        }}
+        .stButton>button:hover {{
+            background: {button_hover};
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }}
+        .stButton>button:disabled {{
+            background: #9CA3AF;
+            cursor: not-allowed;
+            transform: none;
+        }}
+        .reset-button {{
+            background: linear-gradient(90deg, #F87171, #EF4444);
+            border: none;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            font-size: 1rem;
+            font-weight: 600;
+            color: {text_color};
+            width: 100%;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            border-radius: 12px;
+        }}
+        .reset-button:hover {{
+            background: linear-gradient(90deg, #B91C1C, #991B1B);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }}
+        .error-message {{
+            background: {error_bg};
+            border: 1px solid {error_border};
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            color: {error_text};
+            font-weight: 500;
+            margin-top: 1rem;
+            animation: slideIn 0.5s ease-out;
+            border-radius: 12px;
+        }}
+        .success-message {{
+            background: {success_bg};
+            border: 1px solid {success_border};
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            color: {success_text};
+            font-weight: 500;
+            margin-top: 1rem;
+            animation: slideIn 0.5s ease-out;
+            border-radius: 12px;
+        }}
+        .file-preview, .validation-message {{
+            color: {text_color};
+            font-size: 0.85rem;
+            margin-top: 0.25rem;
+            font-style: italic;
+        }}
+        .file-size-gauge {{
+            width: 100%;
+            height: 10px;
+            background: #E5E7EB;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 0.25rem;
+        }}
+        .file-size-gauge-bar {{
+            height: 100%;
+            background: {progress_bg};
+            transition: width 0.3s ease;
+        }}
+        @keyframes slideIn {{
+            from {{ opacity: 0; transform: translateY(10px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
+        .loading-spinner {{
+            border: 4px solid {text_color};
+            border-top: 4px solid {progress_bg};
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 0.5rem;
+        }}
+        .tooltip {{
+            position: relative;
+            display: inline-block;
+            color: {text_color};
+        }}
+        .tooltip .tooltiptext {{
+            visibility: hidden;
+            width: 180px;
+            background-color: {tooltip_bg};
+            color: {tooltip_text};
+            text-align: center;
+            border-radius: 6px;
+            padding: 6px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -90px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.85rem;
+        }}
+        .tooltip:hover .tooltiptext {{
+            visibility: visible;
+            opacity: 1;
+        }}
+        .stExpander {{
+            background: {input_bg};
+            border: 1px solid {input_border};
+            border-radius: 0.5rem;
+        }}
+        .stExpander summary {{
+            color: {text_color};
+            font-weight: 600;
+        }}
+        .footer {{
+            text-align: center;
+            color: {text_color};
+            opacity: 0.6;
+            font-size: 0.8rem;
+            margin-top: 2rem;
+            animation: fadeIn 1s ease-in;
+        }}
+        .theme-toggle {{
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            background: {toggle_bg};
+            border: 1px solid {toggle_border};
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }}
+        .theme-toggle:hover {{
+            background: {button_hover};
+            transform: scale(1.1);
+        }}
+        .theme-toggle span {{
+            font-size: 1.2rem;
+        }}
+        .login-container {{
+            background: {login_bg};
+            border-radius: 1rem;
+            box-shadow: {card_shadow};
+            padding: 2rem;
+            max-width: 400px;
+            margin: 5rem auto;
+            border: 1px solid {login_border};
+            animation: fadeIn 0.5s ease-in;
+        }}
+        .login-header {{
+            font-size: 1.75rem;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: {text_color};
+        }}
+        .login-input {{
+            background: {input_bg};
+            border: 1px solid {input_border};
+            border-radius: 12px;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }}
+        .login-input:hover {{
+            border-color: #3B82F6;
+            background: #E5E7EB;
+            transform: scale(1.02);
+        }}
+        .login-button {{
+            background: {button_bg};
+            border: none;
+            border-radius: 12px;
+            padding: 0.75rem;
+            font-size: 1rem;
+            font-weight: 600;
+            color: {text_color};
+            width: 100%;
+            transition: all 0.3s ease;
+        }}
+        .login-button:hover {{
+            background: {button_hover};
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }}
+        .input-icon {{
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: {input_bg};
+            border: 1px solid {input_border};
+            border-radius: 12px;
+            padding: 0.5rem;
+            margin-bottom: 1rem;
+        }}
+        .input-icon svg {{
+            margin-left: 0.5rem;
+            color: {text_color};
+            opacity: 0.6;
+        }}
+        .input-icon input {{
+            border: none;
+            background: transparent;
+            width: 100%;
+            outline: none;
+            color: {text_color};
+            font-family: 'Inter', sans-serif;
+        }}
+        .input-icon input::placeholder {{
+            color: {text_color};
+            opacity: 0.6;
+        }}
+        .row-widget-stMarkdown {{
+            margin-bottom: -15px; /* Adjust spacing between icon and input */
+        }}
+        @keyframes fadeIn {{
+            from {{ opacity: 0; }}
+            to {{ opacity: 1; }}
+        }}
+        </style>
+        """
+
+    # Apply theme-based CSS
+    st.markdown(get_css(st.session_state.theme), unsafe_allow_html=True)
+
+    # Theme toggle button
+    theme_icon = "🌙" if st.session_state.theme == 'light' else "☀️"
+    if st.button(theme_icon, key="theme_toggle", help="Toggle theme"):
+        st.session_state.theme = 'dark' if st.session_state.theme == 'light' else 'light'
+        st.rerun()
+
+    # Login Page
+    if not st.session_state.logged_in:
+        # st.markdown('<div class="login-container">', unsafe_allow_html=True)
+        st.markdown('<div class="login-header">Jainam Data Processor</div>', unsafe_allow_html=True)
+
+        # Username input with icon
+        col1, col2 = st.columns([0.1, 0.9])
+        with col1:
+            st.markdown('''<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>''', unsafe_allow_html=True)
+        with col2:
+            username = st.text_input("", placeholder="Username", key="username", label_visibility="collapsed")
+
+        # Password input with icon
+        col1, col2 = st.columns([0.1, 0.9])
+        with col1:
+            st.markdown('''<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>''', unsafe_allow_html=True)
+        with col2:
+            password = st.text_input("", type="password", placeholder="Password", key="password", label_visibility="collapsed")
+
+        if st.button("Login", key="login_btn"):
+            if username == VALID_USERNAME and hash_password(password) == VALID_PASSWORD_HASH:
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.markdown('<div class="error-message">Invalid username or password</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        return
+
+    # Main Interface
     st.markdown("""
-    <style>
-    body {
-        font-family: 'Poppins', sans-serif;
-    }
-    .stApp {
-        background: linear-gradient(135deg, #6b7280 0%, #1e3a8a 100%);
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 1rem;
-    }
-    .container {
-        background: white;
-        border-radius: 1.5rem;
-        box-shadow: 0 15px 30px rgba(0, 0, 0, 0.2);
-        padding: 2.5rem;
-        max-width: 28rem;
-        width: 100%;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }
-    .header h1 {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #1e40af;
-        background: linear-gradient(to right, #1e40af, #3b82f6);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .stButton>button {
-        background: linear-gradient(90deg, #3b82f6, #1e40af);
-        border: none;
-        border-radius: 0.75rem;
-        padding: 0.75rem 1.5rem;
-        font-size: 1rem;
-        font-weight: 600;
-        color: white;
-        width: 100%;
-        transition: all 0.3s ease;
-    }
-    .stButton>button:hover {
-        background: linear-gradient(90deg, #1e40af, #1e3a8a);
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-    }
-    .stButton>button:disabled {
-        background: #9ca3af;
-        cursor: not-allowed;
-        transform: none;
-        box-shadow: none;
-    }
-    .stFileUploader>div>div>input {
-        background: #f8fafc;
-        border: 2px dashed #d1d5db;
-        border-radius: 0.75rem;
-        padding: 1rem;
-        transition: all 0.3s ease;
-    }
-    .stFileUploader>div>div>input:hover {
-        border-color: #3b82f6;
-        background: #eff6ff;
-    }
-    .stTextInput>div>input, .stDateInput>div>input {
-        background: #f8fafc;
-        border: 2px solid #d1d5db;
-        border-radius: 0.75rem;
-        padding: 1rem;
-        transition: all 0.3s ease;
-    }
-    .stTextInput>div>input:hover, .stDateInput>div>input:hover {
-        border-color: #3b82f6;
-        background: #eff6ff;
-    }
-    .error-message {
-        background: #fee2e2;
-        border: 1px solid #ef4444;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        color: #b91c1c;
-        font-weight: 500;
-        margin-top: 1rem;
-    }
-    </style>
+    <div class="header">
+        <h1>Jainam Data Processor</h1>
+    </div>
     """, unsafe_allow_html=True)
 
-    # UI Layout
-    st.markdown('<div class="container">', unsafe_allow_html=True)
-    st.markdown('<div class="header"><h1>Jainam Data Processor</h1></div>', unsafe_allow_html=True)
-
     # File uploaders and input fields
-    file1 = st.file_uploader("Compiled MTM Sheet (Excel)", type=["xlsx", "csv"])
-    file2 = st.file_uploader("Jainam Daily Allocation (Excel)", type=["xlsx", "csv"])
-    file3 = st.file_uploader("Updated JAINAM DAILY (Excel)", type=["xlsx", "csv"])
-    sheet_name = st.text_input("Sheet Name (e.g., JULY 2025)")
-    date = st.date_input("Date")
+    with st.container():
+        st.markdown('<div class="tooltip">📁 Compiled MTM Sheet<span class="tooltiptext">Excel/CSV with MTM data.</span></div>', unsafe_allow_html=True)
+        file1 = st.file_uploader("", type=["xlsx", "csv"], key="file1")
+        if file1:
+            st.session_state.form_inputs['file1'] = file1
+            st.markdown(f'<div class="file-preview">Uploaded: {file1.name}</div>', unsafe_allow_html=True)
 
-    # Process button
-    if st.button("Process Files", key="process_btn"):
+        st.markdown('<div class="tooltip">📁 Jainam Daily Allocation<span class="tooltiptext">Excel/CSV with allocation data.</span></div>', unsafe_allow_html=True)
+        file2 = st.file_uploader("", type=["xlsx", "csv"], key="file2")
+        if file2:
+            st.session_state.form_inputs['file2'] = file2
+            st.markdown(f'<div class="file-preview">Uploaded: {file2.name}</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="tooltip">📁 Updated JAINAM DAILY<span class="tooltiptext">Excel/CSV with updated daily data.</span></div>', unsafe_allow_html=True)
+        file3 = st.file_uploader("", type=["xlsx", "csv"], key="file3")
+        if file3:
+            st.session_state.form_inputs['file3'] = file3
+            st.markdown(f'<div class="file-preview">Uploaded: {file3.name}</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="tooltip">📝 Sheet Name<span class="tooltiptext">Enter the exact sheet name (e.g., JULY 2025).</span></div>', unsafe_allow_html=True)
+        sheet_name = st.text_input("", value=st.session_state.form_inputs['sheet_name'], placeholder="Enter sheet name (e.g., JULY 2025)")
+        if sheet_name:
+            st.session_state.form_inputs['sheet_name'] = sheet_name
+
+        st.markdown('<div class="tooltip">📅 Date<span class="tooltiptext">Select a date up to today (August 13, 2025).</span></div>', unsafe_allow_html=True)
+        date = st.date_input("", max_value=datetime(2025, 8, 13), value=st.session_state.form_inputs['date'])
+        if date:
+            st.session_state.form_inputs['date'] = date
+
+    # Buttons
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        process_clicked = st.button("⚙️ Process Files", key="process_btn")
+    with col2:
+        reset_clicked = st.button("🔄 Reset Form", key="reset_btn", help="Clear all inputs")
+
+    # Handle reset
+    if reset_clicked:
+        st.session_state.form_inputs = {'file1': None, 'file2': None, 'file3': None, 'sheet_name': '', 'date': None}
+        st.rerun()
+
+    # Process button logic
+    if process_clicked:
         if not all([file1, file2, file3, sheet_name, date]):
             st.markdown('<div class="error-message">All fields are required.</div>', unsafe_allow_html=True)
             return
 
+        # Progress bar with loading animation
+        progress_bar = st.progress(0)
         with st.spinner("Processing your files..."):
+            st.markdown('<div class="loading-spinner"></div>Processing...', unsafe_allow_html=True)
             try:
+                progress_bar.progress(10)
                 # Determine file type and read accordingly
                 def read_file(file, sheet=None):
                     ext = os.path.splitext(file.name)[1].lower()
@@ -136,6 +514,7 @@ def main():
                         return f"Error reading file {file.name}: {str(e)}"
 
                 # Read the files
+                progress_bar.progress(20)
                 df1 = read_file(file1)
                 df2 = read_file(file2, sheet='Record')
                 df3 = read_file(file3, sheet=sheet_name)
@@ -155,6 +534,7 @@ def main():
                         st.markdown(f'<div class="error-message">File {name} is empty.</div>', unsafe_allow_html=True)
                         return
 
+                progress_bar.progress(30)
                 # Process df3 to extract mtm_df, capital_deployed_df, max_loss_df
                 try:
                     mtm_row_index = df3[df3["Unnamed: 0"] == "MTM"].index[0]
@@ -169,6 +549,7 @@ def main():
                 capital_deployed_df = df3.iloc[capital_deployed_row_index:max_loss_row_index + 1]
                 max_loss_df = df3.iloc[max_loss_row_index:AVG_row_index + 1]
 
+                progress_bar.progress(40)
                 # Process mtm_df
                 mtm_df = mtm_df.drop(index=mtm_df.index[0]).reset_index(drop=True)
                 mtm_df.columns = mtm_df.iloc[0]
@@ -197,6 +578,7 @@ def main():
                     st.markdown('<div class="error-message">Error: \'IDs\' column not found in Max SL section of file3.</div>', unsafe_allow_html=True)
                     return
 
+                progress_bar.progress(50)
                 # Filter df1 based on non_null_ids
                 if 'UserID' not in df1.columns:
                     st.markdown('<div class="error-message">Error: \'UserID\' column not found in file1.</div>', unsafe_allow_html=True)
@@ -219,6 +601,7 @@ def main():
                     st.markdown(f'<div class="error-message">No data found for date {date} in file1.</div>', unsafe_allow_html=True)
                     return
 
+                progress_bar.progress(60)
                 # Drop unnecessary columns
                 cols_to_drop = ['Date', 'SNO', 'Enabled', 'LoggedIn', 'SqOff Done',
                                 'Broker', 'Qty Multiplier', 'Available Margin', 'Total Orders',
@@ -240,6 +623,7 @@ def main():
                     return
                 max_loss_df['max_loss'] = max_loss_df['IDs'].map(matched_rows.set_index('UserID')['MAX LOSS'])
 
+                progress_bar.progress(70)
                 # Filter out invalid rows
                 mtm_df = mtm_df[mtm_df['IDs'].notna() & (mtm_df['IDs'] != '')]
                 capital_deployed_df = capital_deployed_df[capital_deployed_df['IDs'].notna() & (capital_deployed_df['IDs'] != '')]
@@ -269,6 +653,7 @@ def main():
                 capital_deployed_df['Alias'] = capital_deployed_df['Alias'].fillna(capital_deployed_df['Alais'])
                 capital_deployed_df = capital_deployed_df.drop(columns=['Alais'])
 
+                progress_bar.progress(80)
                 # Process df2
                 custom_header = ['UserID', 'User Alias', 'Algo', 'VT', 'GB', 'PS', 'RD', 'RM', 'ALLOCATION', 'MAX LOSS']
                 all_data = []
@@ -331,6 +716,7 @@ def main():
                     return
                 df2 = df2.iloc[:-1].reset_index(drop=True)
 
+                progress_bar.progress(90)
                 # Fill component allocations
                 component_cols = ['PS', 'VT', 'GB', 'RD', 'RM']
                 current_userid = None
@@ -387,23 +773,49 @@ def main():
                 capital_deployed_df["Alias(1)"]=max_loss_df["Alias"]
                 capital_deployed_df["max_loss"]=max_loss_df["max_loss"]
 
-                # Save to CSV in memory
-                output = BytesIO()
-                capital_deployed_df.to_csv(output, index=False)
-                output.seek(0)
+                # Rename columns for better readability
+                capital_deployed_df = capital_deployed_df.rename(columns={
+                    'IDs': 'User ID',
+                    'Alias': 'Component',
+                    'Allocation': 'Capital Deployed',
+                    'MTM': 'MTM',
+                    '  ': '|',
+                    'IDs(1)': 'User ID (SL)',
+                    'Alias(1)': 'Component (SL)',
+                    'max_loss': 'Max Loss'
+                })
 
-                # Provide download button
-                st.download_button(
-                    label="Download Processed File",
-                    data=output,
-                    file_name=f'jainam_{date}.csv',
-                    mime='text/csv'
-                )
+                # Save to session state for display
+                st.session_state.output = capital_deployed_df
+
+                progress_bar.progress(100)
+                st.markdown('<div class="success-message">✅ Files processed successfully! View the data below.</div>', unsafe_allow_html=True)
 
             except Exception as e:
                 st.markdown(f'<div class="error-message">Error processing files: {str(e)}</div>', unsafe_allow_html=True)
+            finally:
+                progress_bar.empty()
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Display processed data
+    if st.session_state.output is not None:
+        st.subheader("Processed Data")
+        st.dataframe(
+            st.session_state.output.style.format({
+                'Capital Deployed': '{:,.2f}',
+                'MTM': '{:,.2f}',
+                'Max Loss': '{:,.2f}'
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # Download button
+        output_excel = to_excel(st.session_state.output)
+        filename = f"jainam_{st.session_state.form_inputs['date'].strftime('%Y-%m-%d')}.xlsx"
+        st.download_button("📥 Download Processed Data", data=output_excel, file_name=filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    # Footer
+    st.markdown('<div class="footer">Jainam Data Processor v1.0 | Developed By Sahil</div>', unsafe_allow_html=True)
 
 if __name__ == '__main__':
     main()
