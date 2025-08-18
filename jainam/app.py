@@ -469,8 +469,17 @@ def main():
         if sheet_name:
             st.session_state.form_inputs['sheet_name'] = sheet_name
 
-        st.markdown('<div class="tooltip">📅 Date<span class="tooltiptext">Select a date up to today (August 13, 2025).</span></div>', unsafe_allow_html=True)
-        date = st.date_input("", max_value=datetime(2025, 8, 14), value=st.session_state.form_inputs['date'])
+        st.markdown(
+            f'<div class="tooltip">📅 Date<span class="tooltiptext">Select a date up to today ({datetime.date.today().strftime("%B %d, %Y")}).</span></div>',
+            unsafe_allow_html=True
+        )
+        
+        date = st.date_input(
+            "",
+            max_value=datetime.date.today(),  # limit till today
+            value=st.session_state.form_inputs['date']
+        )
+        
         if date:
             st.session_state.form_inputs['date'] = date
 
@@ -819,4 +828,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
